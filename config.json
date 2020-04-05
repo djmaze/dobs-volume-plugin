@@ -1,0 +1,56 @@
+{
+    "description": "Digital Ocean block storage plugin for Docker",
+    "documentation": "https://docs.docker.com/engine/extend/plugins/",
+    "entrypoint": [
+        "/docker-dobs-volume-driver"
+    ],
+    "env": [
+        {
+            "name": "DEBUG",
+            "settable": [
+                "value"
+            ],
+            "value": "0"
+        },
+        {
+            "name": "TOKEN",
+            "settable": [
+                "value"
+            ],
+            "value": ""
+        }
+    ],
+    "interface": {
+        "socket": "dobs.sock",
+        "types": [
+            "docker.volumedriver/1.0"
+        ]
+    },
+    "linux": {
+        "capabilities": [
+            "CAP_SYS_ADMIN"
+        ],
+        "allowAllDevices": true,
+        "devices": null
+    },
+    "mounts": [
+        {
+            "destination": "/mnt/state",
+            "options": [
+                "rbind"
+            ],
+            "source": "/var/lib/docker/plugins/",
+            "type": "bind"
+        },
+        {
+          "Source": "/dev",
+          "Destination": "/dev",
+          "Type": "bind",
+          "Options": ["rbind"]
+        }
+    ],
+    "network": {
+        "type": "host"
+    },
+    "propagatedmount": "/mnt/volumes"
+}

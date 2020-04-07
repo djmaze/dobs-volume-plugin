@@ -1,4 +1,4 @@
-PLUGIN_NAME=decentralize/dobs-volume-driver
+PLUGIN_NAME=decentralize/dobs-volume-plugin
 PLUGIN_TAG=0.1.0
 
 all: clean docker rootfs create

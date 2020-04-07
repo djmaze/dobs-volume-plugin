@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 	"log"
+	"time"
 	volumeplugin "github.com/docker/go-plugins-helpers/volume"
 )
 
@@ -22,7 +23,8 @@ type dobsVolume struct {
 	VolumeID string
 	Name string
 	Mountpoint string
-  	connections int
+	connections int
+	shouldDetach bool
 }
 
 type dobsDriver struct {
@@ -165,6 +167,8 @@ func (d *dobsDriver) Mount(req *volumeplugin.MountRequest) (*volumeplugin.MountR
 		return nil, errors.New(req.Name)
 	}
 
+	v.shouldDetach = false
+
 	if v.connections == 0 {
 		err := d.attachVolume(ctx, v)
 		if err != nil {
@@ -299,9 +303,25 @@ func (d *dobsDriver) attachVolume(ctx Context, v *dobsVolume) error {
 }
 
 func (d *dobsDriver) detachVolume(ctx Context, v *dobsVolume) error {
-	log.Printf("Detaching %s from droplet %s\n",
-		v.Name,
-		d.InstanceID,
-	)
-	return d.client.DetachVolume(ctx, v.VolumeID, d.InstanceID)
+	v.shouldDetach = true
+
+	go d.detachLater(v, 2 * time.Second)
+	return nil
+}
+
+func (d *dobsDriver) detachLater(v *dobsVolume, n time.Duration) {
+	time.Sleep(n)
+
+	d.Lock()
+	defer d.Unlock()
+
+	if v.shouldDetach {
+		log.Printf("Detaching %s from droplet %s\n",
+			v.Name,
+			d.InstanceID,
+		)
+		d.client.DetachVolume(context.Background(), v.VolumeID, d.InstanceID)
+
+		v.shouldDetach = false
+	}
 }

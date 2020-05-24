@@ -9,8 +9,10 @@ Docker volume driver for Digital Ocean block storage. Mounts your Digital Ocean 
 1. Install the volume driver on your node:
 
     ```bash
-    docker plugin install decentralize/dobs-volume-plugin:0.1.0 TOKEN=<DIGITALOCEAN API TOKEN>
+    docker plugin install decentralize/dobs-volume-plugin:0.1.1 TOKEN=<DIGITALOCEAN API TOKEN>
     ```
+
+    Optionally, you can set the `API_BASE_URL` as well. (It defaults to `https://api.digitalocean.com/`.)
 
 ## Usage
 

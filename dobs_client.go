@@ -25,12 +25,17 @@ type APIVolume struct {
 }
 
 // Client returns a new DigitalOcean client
-func Client(token string, region string) (DobsClient, error) {
+func Client(token string, region string, baseURL string) (DobsClient, error) {
 	tokenSrc := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+  if baseURL == "" {
+    baseURL = "https://api.digitalocean.com/"
+  }
 
 	client, err := godo.New(oauth2.NewClient(
 		oauth2.NoContext, tokenSrc),
-		godo.SetUserAgent(userAgent()))
+    godo.SetUserAgent(userAgent()),
+    godo.SetBaseURL(baseURL),
+		)
 
 	return DobsClient{GodoClient: client, Region: region}, err
 }

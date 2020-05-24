@@ -1,5 +1,5 @@
 PLUGIN_NAME=decentralize/dobs-volume-plugin
-PLUGIN_TAG=0.1.0
+PLUGIN_TAG=0.1.1
 
 all: clean docker rootfs create
 

@@ -13,6 +13,13 @@
             "value": "0"
         },
         {
+            "name": "API_BASE_URL",
+            "settable": [
+                "value"
+            ],
+            "value": ""
+        },
+        {
             "name": "TOKEN",
             "settable": [
                 "value"

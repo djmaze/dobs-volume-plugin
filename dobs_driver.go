@@ -31,6 +31,7 @@ type dobsDriver struct {
 	sync.RWMutex
 
 	root string
+  baseURL string
 	token string
 	InstanceID string
 	Region string
@@ -38,11 +39,12 @@ type dobsDriver struct {
 	volumes map[string]*dobsVolume
 }
 
-func newDobsDriver(root string, token string) (*dobsDriver) {
+func newDobsDriver(root string, token string, baseURL string) (*dobsDriver) {
 	d := &dobsDriver{
-      root:      filepath.Join(root, "volumes"),
+    root:      filepath.Join(root, "volumes"),
 	  volumes:   map[string]*dobsVolume{},
-	  token: 	token,
+    baseURL: baseURL,
+	  token: token,
 	}
 
 	return d
@@ -70,6 +72,7 @@ func (d *dobsDriver) Init() error {
 	client, err := Client(
 		d.token,
 		d.Region,
+    d.baseURL,
 	)
 	if err != nil {
 		return err

@@ -9,10 +9,10 @@ import (
 const socketAddress = "/run/docker/plugins/dobs.sock"
 
 func main() {
-
+  baseURL := os.Getenv("API_BASE_URL")
 	token := os.Getenv("TOKEN")
 
-	d := newDobsDriver("/mnt", token)
+	d := newDobsDriver("/mnt", token, baseURL)
 	err := d.Init()
 	if err != nil {
 		fmt.Println(err)

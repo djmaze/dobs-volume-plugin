@@ -1,15 +1,17 @@
 package main
 
 import (
-	"syscall"
-	"os"
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
-	"sync"
 	"log"
+	"os"
+	"path/filepath"
+	"strconv"
+	"sync"
+	"syscall"
 	"time"
+
 	volumeplugin "github.com/docker/go-plugins-helpers/volume"
 )
 
@@ -20,31 +22,33 @@ type Context interface {
 }
 
 type dobsVolume struct {
-	VolumeID string
-	Name string
-	Mountpoint string
-	connections int
+	VolumeID     string
+	Name         string
+	Mountpoint   string
+	connections  int
 	shouldDetach bool
+	Uid          uint32
+	Gid          uint32
 }
 
 type dobsDriver struct {
 	sync.RWMutex
 
-	root string
-  baseURL string
-	token string
+	root       string
+	baseURL    string
+	token      string
 	InstanceID string
-	Region string
-	client         DobsClient
-	volumes map[string]*dobsVolume
+	Region     string
+	client     DobsClient
+	volumes    map[string]*dobsVolume
 }
 
-func newDobsDriver(root string, token string, baseURL string) (*dobsDriver) {
+func newDobsDriver(root string, token string, baseURL string) *dobsDriver {
 	d := &dobsDriver{
-    root:      filepath.Join(root, "volumes"),
-	  volumes:   map[string]*dobsVolume{},
-    baseURL: baseURL,
-	  token: token,
+		root:    filepath.Join(root, "volumes"),
+		volumes: map[string]*dobsVolume{},
+		baseURL: baseURL,
+		token:   token,
 	}
 
 	return d
@@ -72,7 +76,7 @@ func (d *dobsDriver) Init() error {
 	client, err := Client(
 		d.token,
 		d.Region,
-    d.baseURL,
+		d.baseURL,
 	)
 	if err != nil {
 		return err
@@ -92,20 +96,37 @@ func (d *dobsDriver) Init() error {
 }
 
 func (d *dobsDriver) Capabilities() *volumeplugin.CapabilitiesResponse {
-  return &volumeplugin.CapabilitiesResponse{Capabilities: volumeplugin.Capability{Scope: "local"}}
+	return &volumeplugin.CapabilitiesResponse{Capabilities: volumeplugin.Capability{Scope: "local"}}
 }
 
 func (d *dobsDriver) Create(req *volumeplugin.CreateRequest) error {
-  d.Lock()
-  defer d.Unlock()
+	d.Lock()
+	defer d.Unlock()
 
 	ctx := context.Background()
 
 	volName := req.Name
+	var uid uint32 = 0
+	var gid uint32 = 0
 	for key, val := range req.Options {
 		switch key {
 		case "name":
 			volName = val
+			break
+		case "uid":
+			uid_long, err := strconv.ParseUint(val, 10, 16)
+			if err != nil {
+				return errors.New("uid must be uint32")
+			}
+			uid = uint32(uid_long)
+			break
+		case "gid":
+			gid_long, err := strconv.ParseUint(val, 10, 16)
+			if err != nil {
+				return errors.New("gid must be uint32")
+			}
+			gid = uint32(gid_long)
+			break
 		default:
 			return fmt.Errorf("unknown option %q", val)
 		}
@@ -118,7 +139,9 @@ func (d *dobsDriver) Create(req *volumeplugin.CreateRequest) error {
 
 	v := &dobsVolume{
 		VolumeID: apiVolume.ID,
-		Name: volName,	
+		Name:     volName,
+		Uid:      uid,
+		Gid:      gid,
 	}
 	v.Mountpoint = filepath.Join(d.root, req.Name)
 	d.volumes[req.Name] = v
@@ -129,13 +152,13 @@ func (d *dobsDriver) Create(req *volumeplugin.CreateRequest) error {
 func (d *dobsDriver) Get(req *volumeplugin.GetRequest) (*volumeplugin.GetResponse, error) {
 	var res volumeplugin.GetResponse
 
-  d.RLock()
-  defer d.RUnlock()
+	d.RLock()
+	defer d.RUnlock()
 
-  v, ok := d.volumes[req.Name]
-  if !ok {
-    return nil, errors.New(req.Name)
-  }
+	v, ok := d.volumes[req.Name]
+	if !ok {
+		return nil, errors.New(req.Name)
+	}
 	res.Volume = &volumeplugin.Volume{
 		Name:       req.Name,
 		Mountpoint: filepath.Join(v.Mountpoint, "data"),
@@ -144,17 +167,17 @@ func (d *dobsDriver) Get(req *volumeplugin.GetRequest) (*volumeplugin.GetRespons
 }
 
 func (d *dobsDriver) List() (*volumeplugin.ListResponse, error) {
-  d.RLock()
-  defer d.RUnlock()
+	d.RLock()
+	defer d.RUnlock()
 
-  var vols []*volumeplugin.Volume
-  for name, v := range d.volumes {
-    vols = append(vols, &volumeplugin.Volume{
-		Name: name, 
-		Mountpoint: filepath.Join(v.Mountpoint, "data"),
-	})
-  }
-  return &volumeplugin.ListResponse{Volumes: vols}, nil
+	var vols []*volumeplugin.Volume
+	for name, v := range d.volumes {
+		vols = append(vols, &volumeplugin.Volume{
+			Name:       name,
+			Mountpoint: filepath.Join(v.Mountpoint, "data"),
+		})
+	}
+	return &volumeplugin.ListResponse{Volumes: vols}, nil
 }
 
 func (d *dobsDriver) Mount(req *volumeplugin.MountRequest) (*volumeplugin.MountResponse, error) {
@@ -194,14 +217,18 @@ func (d *dobsDriver) Mount(req *volumeplugin.MountRequest) (*volumeplugin.MountR
 		if err := d.mountVolume(v); err != nil {
 			return nil, err
 		}
-    }
+
+		if err = d.setupDataDir(v); err != nil {
+			return nil, err
+		}
+	}
 	v.connections++
 
 	res.Mountpoint = filepath.Join(v.Mountpoint, "data")
 	return &res, nil
 }
 
-func (d *dobsDriver) mountVolume(v *dobsVolume) (error) {
+func (d *dobsDriver) mountVolume(v *dobsVolume) error {
 	src := fmt.Sprintf("/dev/disk/by-id/scsi-0DO_Volume_%s", v.Name)
 
 	log.Printf("Mounting %s: device %s at %s\n",
@@ -219,16 +246,37 @@ func (d *dobsDriver) mountVolume(v *dobsVolume) (error) {
 	return nil
 }
 
+func (d *dobsDriver) setupDataDir(v *dobsVolume) error {
+	dataDir := filepath.Join(v.Mountpoint, "data")
+
+	_, err := os.Lstat(dataDir)
+	if os.IsNotExist(err) {
+		log.Printf("Creating data directory for volume %s", v.Name)
+		err = os.Mkdir(dataDir, 0700)
+		if err != nil {
+			return err
+		}
+	}
+
+	log.Printf("Chown´ing data directory for volume %s to %d:%d", v.Name, v.Uid, v.Gid)
+	err = os.Chown(dataDir, int(v.Uid), int(v.Gid))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (d *dobsDriver) Path(req *volumeplugin.PathRequest) (*volumeplugin.PathResponse, error) {
 	var res volumeplugin.PathResponse
 
-  d.RLock()
-  defer d.RUnlock()
+	d.RLock()
+	defer d.RUnlock()
 
-  v, ok := d.volumes[req.Name]
-  if !ok {
-    return nil, errors.New(req.Name)
-  }
+	v, ok := d.volumes[req.Name]
+	if !ok {
+		return nil, errors.New(req.Name)
+	}
 
 	res.Mountpoint = filepath.Join(v.Mountpoint, "data")
 	log.Printf("Returning path %s for volume %s", res.Mountpoint, v.Name)
@@ -236,23 +284,23 @@ func (d *dobsDriver) Path(req *volumeplugin.PathRequest) (*volumeplugin.PathResp
 }
 
 func (d *dobsDriver) Remove(req *volumeplugin.RemoveRequest) error {
-  d.Lock()
-  defer d.Unlock()
+	d.Lock()
+	defer d.Unlock()
 
-  v, ok := d.volumes[req.Name]
-  if !ok {
-    return errors.New(req.Name)
-  }
+	v, ok := d.volumes[req.Name]
+	if !ok {
+		return errors.New(req.Name)
+	}
 
-  if v.connections != 0 {
-    return fmt.Errorf("Volume still has %d connections", v.connections)
-  }
+	if v.connections != 0 {
+		return fmt.Errorf("Volume still has %d connections", v.connections)
+	}
 
-  if err := os.RemoveAll(v.Mountpoint); err != nil {
-    return err
-  }
-  delete(d.volumes, req.Name)
-  return nil
+	if err := os.RemoveAll(v.Mountpoint); err != nil {
+		return err
+	}
+	delete(d.volumes, req.Name)
+	return nil
 }
 
 func (d *dobsDriver) Unmount(req *volumeplugin.UnmountRequest) error {
@@ -308,7 +356,7 @@ func (d *dobsDriver) attachVolume(ctx Context, v *dobsVolume) error {
 func (d *dobsDriver) detachVolume(ctx Context, v *dobsVolume) error {
 	v.shouldDetach = true
 
-	go d.detachLater(v, 2 * time.Second)
+	go d.detachLater(v, 2*time.Second)
 	return nil
 }
 

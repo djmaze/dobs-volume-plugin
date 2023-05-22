@@ -21,7 +21,7 @@ Docker volume driver for Digital Ocean block storage. Mounts your Digital Ocean 
    2. Make sure the volume is not attached to any droplet.
 1. Create a docker volume:
     ```bash
-    docker volume create -d decentralize/dobs-volume-plugin:0.1.0 -o name=<NAME OF DIGITALOCEAN VOLUME> -o uid=<UID TO CHOWN TO> -o gid=<GID TO CHOWN TO> <NAME OF DOCKER VOLUME>
+    docker volume create -d decentralize/dobs-volume-plugin:0.2.0 -o name=<NAME OF DIGITALOCEAN VOLUME> -o uid=<UID TO CHOWN TO> -o gid=<GID TO CHOWN TO> <NAME OF DOCKER VOLUME>
     ```
     If the `name` option is missing, the Digital Ocean volume name is supposed to be the same as the Docker volume name.
     
